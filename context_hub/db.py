@@ -185,13 +185,25 @@ def list_projects_with_last_activity(session: Session):
     projects = session.scalars(select(Project)).all()
     result = []
     for project in projects:
+        last_ts = None
         if project.activities:
-            last_ts = max(a.timestamp for a in project.activities)
-        else:
-            last_ts = None
+            normalized_ts = []
+            for a in project.activities:
+                ts = a.timestamp
+                if ts is None:
+                    continue
+                # Guard against any mixed aware/naive datetimes by normalizing to naive.
+                if ts.tzinfo is not None:
+                    ts = ts.replace(tzinfo=None)
+                normalized_ts.append(ts)
+            if normalized_ts:
+                last_ts = max(normalized_ts)
         result.append((project, last_ts))
-    # Sort by last activity (None last)
-    result.sort(key=lambda item: (item[1] is None, item[1] or datetime.min), reverse=True)
+    # Sort by last activity (newest first, None last)
+    result.sort(
+        key=lambda item: (item[1] is not None, item[1] or datetime.min),
+        reverse=True,
+    )
     return result
 
 def get_activities_for_project(session: Session, project_path: str):

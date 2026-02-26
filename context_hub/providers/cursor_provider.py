@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -46,7 +46,8 @@ class CursorProvider(BaseProvider):
 
         try:
             stat = path.stat()
-            timestamp = datetime.fromtimestamp(stat.st_mtime)
+            # Normalize to naive UTC for consistency.
+            timestamp = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).replace(tzinfo=None)
             summary = path.stem.replace("_", " ")
 
             with path.open("r", encoding="utf-8") as f:
@@ -62,8 +63,14 @@ class CursorProvider(BaseProvider):
                     # Timestamp heuristics.
                     for key in ("created_at", "createdAt", "timestamp", "ts"):
                         if key in record:
+                            raw_value = str(record[key])
                             try:
-                                timestamp = datetime.fromisoformat(str(record[key]))
+                                parsed = datetime.fromisoformat(raw_value)
+                                # If parsed is timezone-aware, convert to UTC and strip tzinfo
+                                # so all stored timestamps are naive UTC.
+                                if parsed.tzinfo is not None:
+                                    parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+                                timestamp = parsed
                             except Exception:
                                 # Keep fallback mtime if parsing fails.
                                 pass

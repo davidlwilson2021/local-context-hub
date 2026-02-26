@@ -38,9 +38,6 @@ class CursorProvider(BaseProvider):
         return items
 
     def _parse_transcript_file(self, path: Path) -> Optional[ActivityItem]:
-        stat = path.stat()
-        timestamp = datetime.fromtimestamp(stat.st_mtime)
-        summary = path.stem.replace("_", " ")
         project_path: Optional[str] = None
         metadata: dict = {
             "source": "cursor_agent_transcript",
@@ -48,6 +45,10 @@ class CursorProvider(BaseProvider):
         }
 
         try:
+            stat = path.stat()
+            timestamp = datetime.fromtimestamp(stat.st_mtime)
+            summary = path.stem.replace("_", " ")
+
             with path.open("r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
@@ -92,7 +93,7 @@ class CursorProvider(BaseProvider):
                     # We only look at the first meaningful JSON line.
                     break
         except OSError:
-            # If we can't read the file, skip it.
+            # If we can't stat or read the file, skip it.
             return None
 
         return ActivityItem(

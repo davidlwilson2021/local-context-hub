@@ -49,3 +49,24 @@ python -m context_hub.cli recent --limit 20
 - All data is stored **locally** on your machine.
 - You can configure which apps and paths to include or ignore.
 
+---
+
+## Personal knowledge base (Second Brain scaffold)
+
+This repo also includes **`my-knowledge-base/`**, a flat-file layout for a Karpathy-style second brain: three folders plus a schema file, no database.
+
+### Layout
+
+```
+my-knowledge-base/
+  CLAUDE.md    # schema / rules for your AI (edit YOUR TOPIC and interests)
+  raw/         # source material — paste articles, notes, exports here
+  wiki/        # organized wiki — maintained by your AI from raw/ + schema
+  outputs/     # answers, reports, research outputs
+```
+
+1. Put sources in `raw/`.
+2. Edit `CLAUDE.md` with your topic and wiki rules.
+3. Point your AI at `my-knowledge-base/` and ask it to compile or update `wiki/` from `raw/` following `CLAUDE.md`, starting with `wiki/INDEX.md`.
+
+Optional: use [agent-browser](https://github.com/vercel-labs/agent-browser) (or similar) to scrape URLs into `raw/`. Run periodic wiki health checks as described in `CLAUDE.md`. Repository-wide agent guidance for coding work lives in **`AGENTS.md`**; knowledge-base-specific rules stay in **`my-knowledge-base/CLAUDE.md`**.

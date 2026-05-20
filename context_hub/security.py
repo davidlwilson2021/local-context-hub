@@ -5,7 +5,7 @@ from urllib.parse import quote
 
 from fastapi import Header, HTTPException, Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse, Response
+from starlette.responses import HTMLResponse, JSONResponse, Response
 
 from .db import load_config
 
@@ -112,6 +112,20 @@ class ApiAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         if not validate_token(token_from_request(request)):
+            accept = request.headers.get("accept", "")
+            if "text/html" in accept:
+                return HTMLResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content=(
+                        "<h1>Context Hub — authentication required</h1>"
+                        "<p>Add your API token to the URL:</p>"
+                        "<pre>http://127.0.0.1:8000/?token=YOUR_TOKEN</pre>"
+                        "<p>Generate or reset a token:</p>"
+                        "<pre>python -m context_hub.cli config token-generate</pre>"
+                        "<p>Then restart <code>serve</code> and use the URL it prints.</p>"
+                    ),
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 content={"detail": "Invalid or missing API token"},

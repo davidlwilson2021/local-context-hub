@@ -173,9 +173,21 @@ def serve(
     host = "0.0.0.0" if allow_lan else "127.0.0.1"
     if allow_lan:
         typer.echo("Warning: --allow-lan exposes Context Hub on your network.")
-    typer.echo(f"Starting server at http://{host}:{port}/")
+    base = f"http://{host}:{port}/"
+    typer.echo(f"Starting server at {base}")
     if cfg.api_token:
-        typer.echo("API token is set — append ?token=<token> to dashboard URLs in the browser.")
+        from urllib.parse import quote
+
+        token_q = quote(cfg.api_token, safe="")
+        typer.echo("")
+        typer.echo("API token is set. Open this URL in your browser:")
+        typer.echo(f"  {base}?token={token_q}")
+        typer.echo("")
+        typer.echo("(Without ?token=... you will get 401 Unauthorized.)")
+        typer.echo("Lost the token? Run: python -m context_hub.cli config token-generate")
+    else:
+        typer.echo(f"Open in browser: {base}")
+        typer.echo("(No api_token — localhost only. Run config token-generate before --allow-lan.)")
     uvicorn.run("context_hub.api:app", host=host, port=port, reload=False)
 
 

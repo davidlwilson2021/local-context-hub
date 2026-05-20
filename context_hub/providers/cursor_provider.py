@@ -6,46 +6,67 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from ..models import ActivityItem, ActivityKind
+from ..paths import find_agent_transcripts_dir, path_is_under, resolve_cursor_base_path
 from .base import BaseProvider
-
-
-# Default Cursor/system-context AppData path for this machine.
-DEFAULT_CURSOR_APPDATA = Path(
-    r"C:\Users\Home Network\AppData\Local\Programs\system context"
-)
 
 
 class CursorProvider(BaseProvider):
     """Provider that reads Cursor agent transcripts and emits ActivityItem objects."""
 
-    def __init__(self, base_path: Optional[str | Path] = None) -> None:
+    def __init__(
+        self,
+        base_path: Optional[str | Path] = None,
+        *,
+        store_full_content: bool = False,
+        use_transcript_titles: bool = False,
+    ) -> None:
         super().__init__(name="cursor")
-        self.base_path = Path(base_path) if base_path else DEFAULT_CURSOR_APPDATA
+        self._configured_base = str(base_path) if base_path else None
+        self.store_full_content = store_full_content
+        self.use_transcript_titles = use_transcript_titles
+        resolved = resolve_cursor_base_path(self._configured_base)
+        self.base_path = resolved
 
-    def _agent_transcripts_dir(self) -> Path:
-        return self.base_path / "agent-transcripts"
+    def _agent_transcripts_dir(self) -> Optional[Path]:
+        if self.base_path:
+            transcripts = self.base_path / "agent-transcripts"
+            if transcripts.is_dir():
+                return transcripts
+        return find_agent_transcripts_dir(self._configured_base)
 
     def scan(self) -> Iterable[ActivityItem]:
         transcripts_dir = self._agent_transcripts_dir()
-        if not transcripts_dir.exists() or not transcripts_dir.is_dir():
+        if not transcripts_dir:
             return []
 
+        root = transcripts_dir.resolve()
         items: list[ActivityItem] = []
         for path in sorted(transcripts_dir.glob("*.jsonl")):
-            item = self._parse_transcript_file(path)
+            if not path_is_under(path, root):
+                continue
+            item = self._parse_transcript_file(path, root)
             if item is not None:
                 items.append(item)
         return items
 
-    def _parse_transcript_file(self, path: Path) -> Optional[ActivityItem]:
-        stat = path.stat()
+    def _parse_transcript_file(self, path: Path, root: Path) -> Optional[ActivityItem]:
+        if not path_is_under(path, root):
+            return None
+
+        try:
+            stat = path.stat()
+        except OSError:
+            return None
+
         timestamp = datetime.fromtimestamp(stat.st_mtime)
         summary = path.stem.replace("_", " ")
         project_path: Optional[str] = None
         metadata: dict = {
             "source": "cursor_agent_transcript",
             "file": str(path),
+            "mtime": stat.st_mtime,
         }
+        content_lines: list[str] = []
 
         try:
             with path.open("r", encoding="utf-8") as f:
@@ -53,27 +74,25 @@ class CursorProvider(BaseProvider):
                     line = line.strip()
                     if not line:
                         continue
+                    content_lines.append(line)
                     try:
                         record = json.loads(line)
                     except json.JSONDecodeError:
                         continue
 
-                    # Timestamp heuristics.
                     for key in ("created_at", "createdAt", "timestamp", "ts"):
                         if key in record:
                             try:
-                                timestamp = datetime.fromisoformat(str(record[key]))
+                                timestamp = datetime.fromisoformat(str(record[key]).replace("Z", "+00:00"))
                             except Exception:
-                                # Keep fallback mtime if parsing fails.
                                 pass
                             break
 
-                    # Title / summary heuristics.
-                    title = record.get("title") or record.get("conversation_title")
-                    if isinstance(title, str) and title.strip():
-                        summary = title.strip()
+                    if self.use_transcript_titles:
+                        title = record.get("title") or record.get("conversation_title")
+                        if isinstance(title, str) and title.strip():
+                            summary = title.strip()
 
-                    # Workspace / project path heuristics.
                     candidate_keys = [
                         "workspaceRoot",
                         "workspace_path",
@@ -89,11 +108,19 @@ class CursorProvider(BaseProvider):
                             metadata["project_path"] = project_path
                             break
 
-                    # We only look at the first meaningful JSON line.
+                    if self.store_full_content:
+                        text = record.get("text") or record.get("content") or record.get("message")
+                        if isinstance(text, str) and text.strip():
+                            metadata.setdefault("content_parts", []).append(text.strip()[:4000])
+
                     break
         except OSError:
-            # If we can't read the file, skip it.
             return None
+
+        if self.store_full_content and content_lines:
+            joined = "\n".join(content_lines)
+            metadata["full_content"] = joined[:50000]
+            metadata["content_preview"] = joined[:2000]
 
         return ActivityItem(
             app_name="cursor",
@@ -104,4 +131,3 @@ class CursorProvider(BaseProvider):
             raw_path=str(path),
             metadata=metadata,
         )
-

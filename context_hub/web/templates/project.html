@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} — Context Hub{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>{{ project.name }}</h1>
+  <div class="project-path">{{ project.path }}</div>
+  <p><span class="badge">{{ project.app }}</span>
+    {% if project.last_activity %} · last {{ project.last_activity.isoformat(timespec='seconds') }}{% endif %}
+  </p>
+  <form class="toolbar" method="get">
+    <input type="hidden" name="path" value="{{ project.path }}" />
+    {% if auth_token %}<input type="hidden" name="token" value="{{ auth_token }}" />{% endif %}
+    <input type="search" name="q" value="{{ q }}" placeholder="Filter activity…" />
+    <select name="kind">
+      <option value="">All kinds</option>
+      <option value="chat" {% if kind == 'chat' %}selected{% endif %}>chat</option>
+      <option value="edit" {% if kind == 'edit' %}selected{% endif %}>edit</option>
+    </select>
+    <button type="submit">Filter</button>
+  </form>
+  <p>
+    <a href="/export/markdown?project_path={{ project.path | urlencode }}{{ auth_suffix }}">Export Markdown</a>
+    · <a href="/export/json?project_path={{ project.path | urlencode }}{{ auth_suffix }}">Export JSON</a>
+  </p>
+</div>
+
+<div class="card">
+  <h2>Activity</h2>
+  {% if activities %}
+  <table>
+    <thead><tr><th>When</th><th>Summary</th><th>Kind</th></tr></thead>
+    <tbody>
+      {% for a in activities %}
+      <tr>
+        <td class="timestamp">{{ a.timestamp.isoformat(timespec='seconds') }}</td>
+        <td>
+          {% if a.raw_path %}
+          <a href="/transcript/view?raw_path={{ a.raw_path | urlencode }}{{ auth_suffix }}">{{ a.summary }}</a>
+          {% else %}{{ a.summary }}{% endif %}
+        </td>
+        <td>{{ a.kind }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p>No activity for this project.</p>{% endif %}
+</div>
+{% endblock %}

@@ -8,13 +8,14 @@ Context Hub is a local-only Python application that scans developer tool activit
 ### Running the application
 
 - **CLI**: `python3 -m context_hub.cli <command>` — see `README.md` Quickstart for command list.
-- **Web UI**: `python3 -m uvicorn context_hub.api:app --host 0.0.0.0 --port 8000` — dashboard at `http://localhost:8000/`.
+- **Web UI**: `python3 -m context_hub.cli serve` — dashboard at `http://127.0.0.1:8000/` (use `--allow-lan` only with `api_token` set).
 - **Database init**: `python3 -m context_hub.cli init-db` — idempotent, safe to re-run.
 
 ### Key caveats
 
 - **click compatibility**: The project requires `click<8.2` to work with `typer>=0.12,<0.13`. If click 8.2+ is installed, CLI option parsing breaks (options like `--project-path` refuse values). The update script pins `click<8.2` explicitly.
-- **No tests directory**: The repository currently has no automated tests. Verification is manual via CLI commands and the web UI.
+- **Tests**: `pytest tests/` — uses isolated temp config/db via fixtures.
 - **No linter/formatter config**: No flake8, ruff, mypy, or similar configuration is present.
-- **Cursor provider default path** is hardcoded for Windows (`C:\Users\Home Network\...`). On Linux, configure via `python3 -m context_hub.cli config set cursor_path <path>` before scanning.
-- **SQLite DB location**: `~/.context_hub/context.db`. Config at `~/.context_hub/config.json`.
+- **Cursor paths**: Auto-detected on Linux/macOS/Windows via `paths.py`; override with `python3 -m context_hub.cli config set cursor_path <path>`.
+- **Security**: When `api_token` is set, all routes (HTML and JSON) require `?token=`, `Authorization: Bearer`, or `X-Context-Hub-Token`.
+- **SQLite DB location**: `~/.context_hub/context.db` (mode 0600 on Unix). Config at `~/.context_hub/config.json`.

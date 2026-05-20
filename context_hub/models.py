@@ -52,4 +52,7 @@ class Config(BaseModel):
     ignore_paths: list[str] = Field(default_factory=list)
     ignore_apps: list[str] = Field(default_factory=list)
     store_full_content: bool = False
+    api_token: Optional[str] = None
+    expose_raw_paths: bool = False
+    redact_paths_on_export: bool = True
 

@@ -5,6 +5,7 @@
   <h1>Context Hub</h1>
   <p style="color:#9ca3af;font-size:0.9rem;">Local activity timeline across Cursor, Cowork, and more.</p>
   <form class="toolbar" method="get" action="/">
+    {% if auth_token %}<input type="hidden" name="token" value="{{ auth_token }}" />{% endif %}
     <input type="search" name="q" placeholder="Search…" value="{{ q }}" />
     <select name="app">
       <option value="">All apps</option>
@@ -19,7 +20,7 @@
     </select>
     <button type="submit">Filter</button>
   </form>
-  <form method="post" action="/scan/ui" style="display:inline;">
+  <form method="post" action="/scan/ui{% if auth_token %}?token={{ auth_token }}{% endif %}" style="display:inline;">
     <button type="submit">Scan now</button>
   </form>
 </div>
@@ -42,7 +43,7 @@
         <tr>
           <td class="timestamp">{% if p.last_activity %}{{ p.last_activity.isoformat(timespec='seconds') }}{% else %}never{% endif %}</td>
           <td>
-            <a href="/projects/view?path={{ p.path | urlencode }}"><strong>{{ p.name }}</strong></a>
+            <a href="/projects/view?path={{ p.path | urlencode }}{{ auth_suffix }}"><strong>{{ p.name }}</strong></a>
             <div class="project-path">{{ p.path }}</div>
           </td>
           <td><span class="badge">{{ p.app or 'unknown' }}</span></td>
@@ -64,7 +65,7 @@
           <td class="timestamp">{{ a.timestamp.isoformat(timespec='seconds') }}</td>
           <td>
             {% if a.project_path %}
-            <a href="/projects/view?path={{ a.project_path | urlencode }}">{{ a.summary }}</a>
+            <a href="/projects/view?path={{ a.project_path | urlencode }}{{ auth_suffix }}">{{ a.summary }}</a>
             <div class="project-path">{{ a.project_path }}</div>
             {% else %}{{ a.summary }}{% endif %}
           </td>

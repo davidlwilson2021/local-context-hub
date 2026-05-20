@@ -16,5 +16,6 @@ Context Hub is a local-only Python application that scans developer tool activit
 - **click compatibility**: The project requires `click<8.2` to work with `typer>=0.12,<0.13`. If click 8.2+ is installed, CLI option parsing breaks (options like `--project-path` refuse values). The update script pins `click<8.2` explicitly.
 - **Tests**: `pytest tests/` — uses isolated temp config/db via fixtures.
 - **No linter/formatter config**: No flake8, ruff, mypy, or similar configuration is present.
-- **Cursor provider default path** is hardcoded for Windows (`C:\Users\Home Network\...`). On Linux, configure via `python3 -m context_hub.cli config set cursor_path <path>` before scanning.
-- **SQLite DB location**: `~/.context_hub/context.db`. Config at `~/.context_hub/config.json`.
+- **Cursor paths**: Auto-detected on Linux/macOS/Windows via `paths.py`; override with `python3 -m context_hub.cli config set cursor_path <path>`.
+- **Security**: When `api_token` is set, all routes (HTML and JSON) require `?token=`, `Authorization: Bearer`, or `X-Context-Hub-Token`.
+- **SQLite DB location**: `~/.context_hub/context.db` (mode 0600 on Unix). Config at `~/.context_hub/config.json`.

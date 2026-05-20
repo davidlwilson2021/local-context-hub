@@ -37,34 +37,39 @@ python -m context_hub.cli serve
 
 - Filter by search text, app, and activity kind.
 - Click a project for its timeline; open transcripts when indexed.
-- **Scan now** triggers a rescan (when no API token is configured).
+- **Scan now** triggers a rescan from the dashboard.
 
-Expose on your LAN only if needed (use an API token):
+Expose on your LAN only with an API token (required):
 
 ```bash
 python -m context_hub.cli config token-generate
 python -m context_hub.cli serve --allow-lan
+# Open http://<host>:8000/?token=<your-token>
 ```
+
+Do not run raw `uvicorn` with `--host 0.0.0.0`; use `cli serve` instead.
 
 ### Security
 
 | Topic | Behavior |
 |--------|----------|
-| **Bind address** | `serve` binds to `127.0.0.1` unless `--allow-lan` (`0.0.0.0`). |
-| **API auth** | When `api_token` is set, `/projects`, `/activity`, `/scan`, `/export/*`, and `/transcript` require `Authorization: Bearer <token>` or header `X-Context-Hub-Token`. |
-| **Raw paths** | Filesystem paths are omitted from API responses unless authenticated or `expose_raw_paths` is enabled. |
-| **Transcript reads** | Only files under configured `cursor_path` / `cowork_path` roots are readable. |
-| **Exports** | Optional path redaction via `redact_paths_on_export` (default on). |
-
-Threat model: intended for a **single developer machine**. Do not expose without `api_token` on shared or untrusted networks.
+| **Threat model** | Single trusted user on one machine. A **LAN attacker** can read indexed dev context if you bind `0.0.0.0` without `api_token`. |
+| **Bind address** | `serve` binds to `127.0.0.1` unless `--allow-lan` (`0.0.0.0`). `--allow-lan` **requires** `api_token`. |
+| **Auth** | When `api_token` is set, **all** routes (HTML + JSON) require `?token=`, `Authorization: Bearer <token>`, or `X-Context-Hub-Token`. |
+| **Raw paths** | Omitted from API unless authenticated or `expose_raw_paths` is enabled. |
+| **Metadata** | Only `source` by default; full metadata (paths, content) requires auth or `expose_metadata`. |
+| **Transcript reads** | Only files under configured `cursor_path` / `cowork_path` roots; scan skips paths outside roots. |
+| **Exports** | Path redaction via `redact_paths_on_export` (default on). |
+| **Local files** | `~/.context_hub/` created with mode `0700`; DB/config `0600` on Unix. |
 
 ### Configuration keys
 
 - `cursor_path`, `cowork_path` — data roots (auto-detected if unset for Cursor).
-- `ignore_paths`, `ignore_apps` — comma-separated exclusions.
+- `ignore_paths`, `ignore_apps` — comma-separated exclusions (`ignore_paths` uses resolved path prefix matching).
 - `store_full_content` — store transcript excerpts in metadata (larger DB).
-- `api_token` — protect JSON API routes.
-- `expose_raw_paths` — include `raw_path` in API without auth (not recommended).
+- `use_transcript_titles` — use conversation titles as summaries (default off; titles may contain secrets).
+- `api_token` — protect all web routes.
+- `expose_raw_paths`, `expose_metadata` — include sensitive fields without auth (not recommended).
 - `redact_paths_on_export` — redact home directory paths in exports.
 
 ### API (JSON)
@@ -90,7 +95,7 @@ Threat model: intended for a **single developer machine**. Do not expose without
 
 ### Privacy
 
-All data stays **local** (`~/.context_hub/context.db` and `config.json`). Configure ignores for sensitive project paths.
+All data stays **local** (`~/.context_hub/context.db` and `config.json`). Scanning imports Cursor/Cowork data that may include secrets in paths or titles — use `ignore_paths`, keep `use_transcript_titles` off, and set `api_token` on shared machines.
 
 ### Tests
 

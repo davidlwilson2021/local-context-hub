@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import secrets
 from typing import Optional
 
@@ -26,7 +27,10 @@ def init_db_cmd() -> None:
 def config_show() -> None:
     """Show current configuration."""
     cfg = load_config()
-    typer.echo(cfg.model_dump_json(indent=2))
+    data = cfg.model_dump()
+    if data.get("api_token"):
+        data["api_token"] = "***"
+    typer.echo(json.dumps(data, indent=2))
     typer.echo(f"\nConfig file: {get_config_path()}")
 
 
@@ -36,7 +40,8 @@ def config_set(
         ...,
         help=(
             "Key: cursor_path, cowork_path, ignore_paths, ignore_apps, "
-            "store_full_content, api_token, expose_raw_paths, redact_paths_on_export"
+            "store_full_content, use_transcript_titles, api_token, expose_raw_paths, "
+            "expose_metadata, redact_paths_on_export"
         ),
     ),
     value: str = typer.Argument(..., help="Value to set"),
@@ -54,8 +59,12 @@ def config_set(
         cfg.ignore_apps = [v.strip().lower() for v in value.split(",") if v.strip()]
     elif key == "store_full_content":
         cfg.store_full_content = value.lower() in ("1", "true", "yes", "on")
+    elif key == "use_transcript_titles":
+        cfg.use_transcript_titles = value.lower() in ("1", "true", "yes", "on")
     elif key == "expose_raw_paths":
         cfg.expose_raw_paths = value.lower() in ("1", "true", "yes", "on")
+    elif key == "expose_metadata":
+        cfg.expose_metadata = value.lower() in ("1", "true", "yes", "on")
     elif key == "redact_paths_on_export":
         cfg.redact_paths_on_export = value.lower() in ("1", "true", "yes", "on")
     elif key == "api_token":
@@ -103,12 +112,19 @@ def doctor() -> None:
         typer.echo("- Cowork path: not configured")
 
     if cfg.api_token:
-        typer.echo("- API token: set (API routes require Authorization: Bearer <token>)")
+        typer.echo("- API token: set (all web routes require token)")
     else:
-        typer.echo("- API token: not set (API open on localhost — set api_token for shared machines)")
+        typer.echo("- API token: not set (web UI open on localhost only)")
+        typer.echo("  WARNING: set api_token before using serve --allow-lan")
 
     if cfg.expose_raw_paths:
-        typer.echo("- expose_raw_paths: enabled (filesystem paths visible in API)")
+        typer.echo("- expose_raw_paths: enabled (filesystem paths visible without auth)")
+
+    if cfg.expose_metadata:
+        typer.echo("- expose_metadata: enabled (full metadata visible without auth)")
+
+    if cfg.use_transcript_titles:
+        typer.echo("- use_transcript_titles: enabled (conversation titles used as summaries)")
 
 
 @app.command("scan")
@@ -146,10 +162,20 @@ def serve(
     """Run the web dashboard (localhost by default)."""
     import uvicorn
 
+    cfg = load_config()
+    if allow_lan and not cfg.api_token:
+        typer.echo(
+            "Error: --allow-lan requires api_token. Run: python -m context_hub.cli config token-generate",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
     host = "0.0.0.0" if allow_lan else "127.0.0.1"
     if allow_lan:
-        typer.echo("Warning: --allow-lan exposes Context Hub on your network. Set api_token in config.")
+        typer.echo("Warning: --allow-lan exposes Context Hub on your network.")
     typer.echo(f"Starting server at http://{host}:{port}/")
+    if cfg.api_token:
+        typer.echo("API token is set — append ?token=<token> to dashboard URLs in the browser.")
     uvicorn.run("context_hub.api:app", host=host, port=port, reload=False)
 
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -82,10 +84,20 @@ class ScanState(Base):
     last_scanned_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 
+def _secure_chmod(path: Path, mode: int) -> None:
+    if sys.platform == "win32":
+        return
+    try:
+        os.chmod(path, mode)
+    except OSError:
+        pass
+
+
 def _get_data_dir() -> Path:
     home = Path.home()
     data_dir = home / DB_DIR_NAME
     data_dir.mkdir(parents=True, exist_ok=True)
+    _secure_chmod(data_dir, 0o700)
     return data_dir
 
 
@@ -105,8 +117,10 @@ def get_engine(echo: bool = False):
 
 def init_db(echo: bool = False) -> None:
     """Create all tables if they don't exist."""
+    _get_data_dir()
     engine = get_engine(echo=echo)
     Base.metadata.create_all(engine)
+    _secure_chmod(get_db_path(), 0o600)
 
 
 def _session_factory() -> sessionmaker[Session]:
@@ -137,6 +151,7 @@ def load_config() -> Config:
 def save_config(config: Config) -> None:
     path = get_config_path()
     path.write_text(config.model_dump_json(indent=2), encoding="utf-8")
+    _secure_chmod(path, 0o600)
 
 
 def get_or_create_app(session: Session, name: str, display_name: Optional[str] = None) -> App:

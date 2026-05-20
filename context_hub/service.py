@@ -31,12 +31,35 @@ def _build_providers(config: Config, app_names: Iterable[str]):
 
     if "cursor" in normalized and "cursor" not in (config.ignore_apps or []):
         base = resolve_cursor_base_path(config.cursor_path)
-        providers.append(CursorProvider(base_path=base, store_full_content=config.store_full_content))
+        providers.append(
+            CursorProvider(
+                base_path=base,
+                store_full_content=config.store_full_content,
+                use_transcript_titles=config.use_transcript_titles,
+            )
+        )
 
     if "cowork" in normalized and "cowork" not in (config.ignore_apps or []):
         providers.append(CoworkProvider(base_path=config.cowork_path))
 
     return providers
+
+
+def _path_matches_ignore(path_str: str, ignore_paths: list[str]) -> bool:
+    if not path_str or not ignore_paths:
+        return False
+    try:
+        resolved = Path(path_str).expanduser().resolve()
+    except OSError:
+        resolved = Path(path_str)
+    for prefix in ignore_paths:
+        try:
+            prefix_path = Path(prefix).expanduser().resolve()
+        except OSError:
+            prefix_path = Path(prefix)
+        if resolved == prefix_path or path_is_under(resolved, prefix_path):
+            return True
+    return False
 
 
 def _filter_ignored(items: Iterable[ActivityItem], config: Config) -> List[ActivityItem]:
@@ -46,12 +69,28 @@ def _filter_ignored(items: Iterable[ActivityItem], config: Config) -> List[Activ
 
     def is_ignored(item: ActivityItem) -> bool:
         path = item.project_path or str(item.metadata.get("project_path", ""))
-        return any(path.startswith(prefix) for prefix in ignore_paths)
+        return _path_matches_ignore(path, ignore_paths)
 
     return [item for item in items if not is_ignored(item)]
 
 
-def _activity_to_dict(activity, *, include_raw_path: bool) -> dict[str, Any]:
+def _metadata_for_response(extra: dict, *, include_full: bool) -> dict[str, Any]:
+    if include_full:
+        return dict(extra or {})
+    if not extra:
+        return {}
+    minimal: dict[str, Any] = {}
+    if extra.get("source"):
+        minimal["source"] = extra["source"]
+    return minimal
+
+
+def _activity_to_dict(
+    activity,
+    *,
+    include_raw_path: bool,
+    include_metadata: bool = False,
+) -> dict[str, Any]:
     row = {
         "id": activity.id,
         "timestamp": activity.timestamp,
@@ -59,8 +98,10 @@ def _activity_to_dict(activity, *, include_raw_path: bool) -> dict[str, Any]:
         "project_path": activity.project.path if activity.project else None,
         "kind": activity.kind,
         "summary": activity.summary,
-        "metadata": activity.extra or {},
     }
+    meta = _metadata_for_response(activity.extra or {}, include_full=include_metadata)
+    if meta:
+        row["metadata"] = meta
     if include_raw_path:
         row["raw_path"] = activity.raw_path
     return row
@@ -128,6 +169,7 @@ def recent_activity(
     since: Optional[datetime] = None,
     until: Optional[datetime] = None,
     include_raw_path: bool = False,
+    include_metadata: bool = False,
     redact_paths: bool = False,
 ):
     init_db()
@@ -141,7 +183,14 @@ def recent_activity(
             since=since,
             until=until,
         )
-        rows = [_activity_to_dict(a, include_raw_path=include_raw_path) for a in activities]
+        rows = [
+            _activity_to_dict(
+                a,
+                include_raw_path=include_raw_path,
+                include_metadata=include_metadata,
+            )
+            for a in activities
+        ]
         return _serialize_rows(rows, redact_paths=redact_paths)
 
 
@@ -180,6 +229,7 @@ def activity_for_project(
     kind: Optional[str] = None,
     limit: Optional[int] = None,
     include_raw_path: bool = False,
+    include_metadata: bool = False,
     redact_paths: bool = False,
 ):
     init_db()
@@ -191,7 +241,14 @@ def activity_for_project(
             kind=kind,
             limit=limit,
         )
-        rows = [_activity_to_dict(a, include_raw_path=include_raw_path) for a in activities]
+        rows = [
+            _activity_to_dict(
+                a,
+                include_raw_path=include_raw_path,
+                include_metadata=include_metadata,
+            )
+            for a in activities
+        ]
         return _serialize_rows(rows, redact_paths=redact_paths)
 
 
@@ -237,6 +294,7 @@ def export_project_markdown(
     *,
     redact_paths: Optional[bool] = None,
     include_raw_path: bool = False,
+    include_metadata: bool = False,
 ) -> str:
     config = load_config()
     if redact_paths is None:
@@ -245,6 +303,7 @@ def export_project_markdown(
     project, activities = get_project_detail(
         project_path,
         include_raw_path=include_raw_path,
+        include_metadata=include_metadata,
         redact_paths=redact_paths,
     )
     title = project["name"] if project else project_path
@@ -275,6 +334,7 @@ def export_project_json(
     *,
     redact_paths: Optional[bool] = None,
     include_raw_path: bool = False,
+    include_metadata: bool = False,
 ) -> dict[str, Any]:
     config = load_config()
     if redact_paths is None:
@@ -283,6 +343,7 @@ def export_project_json(
     project, activities = get_project_detail(
         project_path,
         include_raw_path=include_raw_path,
+        include_metadata=include_metadata,
         redact_paths=redact_paths,
     )
     return {

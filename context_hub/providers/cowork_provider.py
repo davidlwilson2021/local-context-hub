@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from ..models import ActivityItem, ActivityKind
+from ..paths import path_is_under
 from .base import BaseProvider
 
 
@@ -14,21 +15,27 @@ class CoworkProvider(BaseProvider):
 
     def __init__(self, base_path: Optional[str | Path] = None) -> None:
         super().__init__(name="cowork")
-        self.base_path = Path(base_path) if base_path else None
+        self.base_path = Path(base_path).resolve() if base_path else None
 
     def scan(self) -> Iterable[ActivityItem]:
         if self.base_path is None or not self.base_path.is_dir():
             return []
 
+        root = self.base_path.resolve()
         items: list[ActivityItem] = []
         for pattern in ("*.jsonl", "*.json"):
             for path in sorted(self.base_path.rglob(pattern)):
-                item = self._parse_file(path)
+                if not path_is_under(path, root):
+                    continue
+                item = self._parse_file(path, root)
                 if item is not None:
                     items.append(item)
         return items
 
-    def _parse_file(self, path: Path) -> Optional[ActivityItem]:
+    def _parse_file(self, path: Path, root: Path) -> Optional[ActivityItem]:
+        if not path_is_under(path, root):
+            return None
+
         try:
             stat = path.stat()
         except OSError:

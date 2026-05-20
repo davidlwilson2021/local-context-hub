@@ -6,11 +6,18 @@ from typing import Optional
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from .security import may_expose_raw_paths, require_api_auth
+from .security import (
+    ApiAuthMiddleware,
+    auth_template_context,
+    may_expose_metadata,
+    may_expose_raw_paths,
+    require_api_auth,
+    token_from_request,
+)
 from .service import (
     activity_for_project,
     export_project_json,
@@ -24,6 +31,7 @@ from .service import (
 
 
 app = FastAPI(title="Context Hub")
+app.add_middleware(ApiAuthMiddleware)
 
 templates_dir = Path(__file__).parent / "web" / "templates"
 templates = Jinja2Templates(directory=str(templates_dir))
@@ -35,10 +43,27 @@ class ScanRequest(BaseModel):
 
 
 def _include_raw(
+    request: Request,
     authorization: Optional[str] = Header(default=None),
     x_context_hub_token: Optional[str] = Header(default=None, alias="X-Context-Hub-Token"),
 ) -> bool:
-    return may_expose_raw_paths(authorization, x_context_hub_token)
+    return may_expose_raw_paths(
+        authorization,
+        x_context_hub_token,
+        query_token=token_from_request(request),
+    )
+
+
+def _include_metadata(
+    request: Request,
+    authorization: Optional[str] = Header(default=None),
+    x_context_hub_token: Optional[str] = Header(default=None, alias="X-Context-Hub-Token"),
+) -> bool:
+    return may_expose_metadata(
+        authorization,
+        x_context_hub_token,
+        query_token=token_from_request(request),
+    )
 
 
 def _parse_dt(value: Optional[str]) -> Optional[datetime]:
@@ -48,6 +73,13 @@ def _parse_dt(value: Optional[str]) -> Optional[datetime]:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid datetime: {value}")
+
+
+def _template(request: Request, name: str, context: dict) -> HTMLResponse:
+    return templates.TemplateResponse(
+        name,
+        {"request": request, **auth_template_context(request), **context},
+    )
 
 
 @app.get("/projects", dependencies=[Depends(require_api_auth)])
@@ -60,6 +92,7 @@ def get_projects(
 
 @app.get("/activity", dependencies=[Depends(require_api_auth)])
 def get_activity(
+    request: Request,
     app_name: Optional[str] = Query(default=None, alias="app"),
     limit: int = Query(default=50, ge=1, le=500),
     project_path: Optional[str] = Query(default=None),
@@ -68,6 +101,7 @@ def get_activity(
     since: Optional[str] = Query(default=None),
     until: Optional[str] = Query(default=None),
     include_raw: bool = Depends(_include_raw),
+    include_metadata: bool = Depends(_include_metadata),
 ):
     since_dt = _parse_dt(since)
     until_dt = _parse_dt(until)
@@ -77,6 +111,7 @@ def get_activity(
             query=q,
             kind=kind,
             include_raw_path=include_raw,
+            include_metadata=include_metadata,
         )
     return recent_activity(
         limit=limit,
@@ -86,6 +121,7 @@ def get_activity(
         since=since_dt,
         until=until_dt,
         include_raw_path=include_raw,
+        include_metadata=include_metadata,
     )
 
 
@@ -99,8 +135,13 @@ def post_scan(body: ScanRequest):
 def export_markdown(
     project_path: str = Query(...),
     include_raw: bool = Depends(_include_raw),
+    include_metadata: bool = Depends(_include_metadata),
 ):
-    text = export_project_markdown(project_path, include_raw_path=include_raw)
+    text = export_project_markdown(
+        project_path,
+        include_raw_path=include_raw,
+        include_metadata=include_metadata,
+    )
     return PlainTextResponse(text, media_type="text/markdown; charset=utf-8")
 
 
@@ -108,14 +149,18 @@ def export_markdown(
 def export_json(
     project_path: str = Query(...),
     include_raw: bool = Depends(_include_raw),
+    include_metadata: bool = Depends(_include_metadata),
 ):
-    return export_project_json(project_path, include_raw_path=include_raw)
+    return export_project_json(
+        project_path,
+        include_raw_path=include_raw,
+        include_metadata=include_metadata,
+    )
 
 
 @app.get("/transcript", dependencies=[Depends(require_api_auth)])
 def get_transcript(
     raw_path: str = Query(...),
-    _: None = Depends(require_api_auth),
 ):
     data = read_transcript(raw_path)
     if data is None:
@@ -132,10 +177,10 @@ def index(
 ):
     projects = projects_with_last_activity(query=q, app_name=app_name)
     recent = recent_activity(limit=50, app_name=app_name, query=q, kind=kind)
-    return templates.TemplateResponse(
+    return _template(
+        request,
         "index.html",
         {
-            "request": request,
             "projects": projects,
             "recent": recent,
             "q": q or "",
@@ -151,14 +196,22 @@ def project_view(
     path: str = Query(...),
     q: Optional[str] = Query(default=None),
     kind: Optional[str] = Query(default=None),
+    include_raw: bool = Depends(_include_raw),
+    include_metadata: bool = Depends(_include_metadata),
 ):
-    project, activities = get_project_detail(path, query=q, kind=kind, include_raw_path=True)
+    project, activities = get_project_detail(
+        path,
+        query=q,
+        kind=kind,
+        include_raw_path=include_raw,
+        include_metadata=include_metadata,
+    )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    return templates.TemplateResponse(
+    return _template(
+        request,
         "project.html",
         {
-            "request": request,
             "project": project,
             "activities": activities,
             "q": q or "",
@@ -175,19 +228,13 @@ def transcript_view(
     data = read_transcript(raw_path)
     if data is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
-    return templates.TemplateResponse(
-        "transcript.html",
-        {"request": request, "transcript": data},
-    )
+    return _template(request, "transcript.html", {"transcript": data})
 
 
 @app.post("/scan/ui")
-def scan_ui():
-    """HTML form-friendly scan trigger (allowed only when api_token is unset)."""
-    from .db import load_config
-
-    config = load_config()
-    if config.api_token:
-        raise HTTPException(status_code=401, detail="Use POST /scan with API token")
+def scan_ui(request: Request):
+    """HTML form-friendly scan trigger."""
     scan_and_store(["cursor", "cowork"])
-    return RedirectResponse(url="/", status_code=303)
+    token = auth_template_context(request)["auth_token"]
+    url = f"/?token={quote(token, safe='')}" if token else "/"
+    return RedirectResponse(url=url, status_code=303)

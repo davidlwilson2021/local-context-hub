@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from ..models import ActivityItem, ActivityKind
-from ..paths import find_agent_transcripts_dir, resolve_cursor_base_path
+from ..paths import find_agent_transcripts_dir, path_is_under, resolve_cursor_base_path
 from .base import BaseProvider
 
 
@@ -18,10 +18,12 @@ class CursorProvider(BaseProvider):
         base_path: Optional[str | Path] = None,
         *,
         store_full_content: bool = False,
+        use_transcript_titles: bool = False,
     ) -> None:
         super().__init__(name="cursor")
         self._configured_base = str(base_path) if base_path else None
         self.store_full_content = store_full_content
+        self.use_transcript_titles = use_transcript_titles
         resolved = resolve_cursor_base_path(self._configured_base)
         self.base_path = resolved
 
@@ -37,15 +39,25 @@ class CursorProvider(BaseProvider):
         if not transcripts_dir:
             return []
 
+        root = transcripts_dir.resolve()
         items: list[ActivityItem] = []
         for path in sorted(transcripts_dir.glob("*.jsonl")):
-            item = self._parse_transcript_file(path)
+            if not path_is_under(path, root):
+                continue
+            item = self._parse_transcript_file(path, root)
             if item is not None:
                 items.append(item)
         return items
 
-    def _parse_transcript_file(self, path: Path) -> Optional[ActivityItem]:
-        stat = path.stat()
+    def _parse_transcript_file(self, path: Path, root: Path) -> Optional[ActivityItem]:
+        if not path_is_under(path, root):
+            return None
+
+        try:
+            stat = path.stat()
+        except OSError:
+            return None
+
         timestamp = datetime.fromtimestamp(stat.st_mtime)
         summary = path.stem.replace("_", " ")
         project_path: Optional[str] = None
@@ -76,9 +88,10 @@ class CursorProvider(BaseProvider):
                                 pass
                             break
 
-                    title = record.get("title") or record.get("conversation_title")
-                    if isinstance(title, str) and title.strip():
-                        summary = title.strip()
+                    if self.use_transcript_titles:
+                        title = record.get("title") or record.get("conversation_title")
+                        if isinstance(title, str) and title.strip():
+                            summary = title.strip()
 
                     candidate_keys = [
                         "workspaceRoot",

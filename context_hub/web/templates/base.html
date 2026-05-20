@@ -65,7 +65,7 @@
     {% block head %}{% endblock %}
   </head>
   <body>
-    <div class="nav"><a href="/">← Dashboard</a></div>
+    <div class="nav"><a href="{% if auth_token %}/?token={{ auth_token }}{% else %}/{% endif %}">← Dashboard</a></div>
     {% block content %}{% endblock %}
   </body>
 </html>

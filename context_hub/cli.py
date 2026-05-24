@@ -63,8 +63,27 @@ def config_set(
         cfg.use_transcript_titles = value.lower() in ("1", "true", "yes", "on")
     elif key == "expose_raw_paths":
         cfg.expose_raw_paths = value.lower() in ("1", "true", "yes", "on")
+        if cfg.expose_raw_paths:
+            typer.echo(
+                "\n⚠ WARNING: expose_raw_paths = True\n"
+                "  Full filesystem paths from your transcripts will be visible in the\n"
+                "  web UI and API responses without authentication. This can reveal your\n"
+                "  project structure, home directory, and sensitive file locations to\n"
+                "  anyone who can reach the server. Only enable on a fully trusted,\n"
+                "  private network with api_token set.\n",
+                err=True,
+            )
     elif key == "expose_metadata":
         cfg.expose_metadata = value.lower() in ("1", "true", "yes", "on")
+        if cfg.expose_metadata:
+            typer.echo(
+                "\n⚠ WARNING: expose_metadata = True\n"
+                "  Full session metadata (timestamps, app names, project paths) will be\n"
+                "  visible in the web UI and API without authentication. Combined with\n"
+                "  expose_raw_paths this reveals your full activity history. Only enable\n"
+                "  on a fully trusted, private network with api_token set.\n",
+                err=True,
+            )
     elif key == "redact_paths_on_export":
         cfg.redact_paths_on_export = value.lower() in ("1", "true", "yes", "on")
     elif key == "api_token":

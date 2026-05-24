@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Optional
-from urllib.parse import quote
 
 from fastapi import Header, HTTPException, Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -22,10 +21,12 @@ def _extract_token(
 
 
 def token_from_request(request: Request) -> Optional[str]:
-    """Read API token from query string, Bearer header, or X-Context-Hub-Token."""
-    query_token = request.query_params.get("token")
-    if query_token:
-        return query_token.strip()
+    """Read API token from Authorization: Bearer or X-Context-Hub-Token header.
+
+    Note: ?token= query-string auth is intentionally NOT supported.
+    Tokens in URLs appear in web-server access logs, browser history,
+    and Referer headers. Use request headers only.
+    """
     return _extract_token(
         request.headers.get("authorization"),
         request.headers.get("x-context-hub-token"),
@@ -49,7 +50,7 @@ def require_api_auth(
     if not config.api_token:
         return
 
-    provided = token_from_request(request) or _extract_token(authorization, x_context_hub_token)
+    provided = _extract_token(authorization, x_context_hub_token)
     if not validate_token(provided):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -59,13 +60,12 @@ def require_api_auth(
 
 
 def auth_template_context(request: Request) -> dict[str, Optional[str]]:
-    """Context for Jinja templates to preserve token in links and forms."""
-    config = load_config()
-    if not config.api_token:
-        return {"auth_token": None, "auth_suffix": ""}
-    token = token_from_request(request)
-    suffix = f"&token={quote(token, safe='')}" if token else ""
-    return {"auth_token": token, "auth_suffix": suffix}
+    """Context for Jinja templates.
+
+    auth_suffix is always empty — query-string token passing is no longer
+    supported to prevent token leakage into server logs and browser history.
+    """
+    return {"auth_token": None, "auth_suffix": ""}
 
 
 def may_expose_raw_paths(
@@ -80,7 +80,8 @@ def may_expose_raw_paths(
         return True
     if not config.api_token:
         return False
-    provided = query_token or _extract_token(authorization, x_context_hub_token)
+    # query_token param kept for call-site compatibility but ignored (see L-1 fix)
+    provided = _extract_token(authorization, x_context_hub_token)
     return validate_token(provided)
 
 
@@ -96,7 +97,8 @@ def may_expose_metadata(
         return True
     if not config.api_token:
         return False
-    provided = query_token or _extract_token(authorization, x_context_hub_token)
+    # query_token param kept for call-site compatibility but ignored (see L-1 fix)
+    provided = _extract_token(authorization, x_context_hub_token)
     return validate_token(provided)
 
 
@@ -118,11 +120,14 @@ class ApiAuthMiddleware(BaseHTTPMiddleware):
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     content=(
                         "<h1>Context Hub — authentication required</h1>"
-                        "<p>Add your API token to the URL:</p>"
-                        "<pre>http://127.0.0.1:8000/?token=YOUR_TOKEN</pre>"
+                        "<p>Include your API token as a request header:</p>"
+                        "<pre>Authorization: Bearer YOUR_TOKEN</pre>"
+                        "<p>Or:</p>"
+                        "<pre>X-Context-Hub-Token: YOUR_TOKEN</pre>"
+                        "<p>For browser access, use a header-injection extension "
+                        "(e.g. ModHeader for Chrome/Firefox).</p>"
                         "<p>Generate or reset a token:</p>"
                         "<pre>python -m context_hub.cli config token-generate</pre>"
-                        "<p>Then restart <code>serve</code> and use the URL it prints.</p>"
                     ),
                     headers={"WWW-Authenticate": "Bearer"},
                 )

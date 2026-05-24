@@ -176,14 +176,16 @@ def serve(
     base = f"http://{host}:{port}/"
     typer.echo(f"Starting server at {base}")
     if cfg.api_token:
-        from urllib.parse import quote
-
-        token_q = quote(cfg.api_token, safe="")
         typer.echo("")
-        typer.echo("API token is set. Open this URL in your browser:")
-        typer.echo(f"  {base}?token={token_q}")
+        typer.echo("API token is set. To authenticate, include this header in your requests:")
+        typer.echo("  Authorization: Bearer <your-token>")
+        typer.echo("  or")
+        typer.echo("  X-Context-Hub-Token: <your-token>")
         typer.echo("")
-        typer.echo("(Without ?token=... you will get 401 Unauthorized.)")
+        typer.echo("For browser access, install a header-injection extension (e.g. ModHeader)")
+        typer.echo("and add the Authorization: Bearer header before opening:")
+        typer.echo(f"  {base}")
+        typer.echo("")
         typer.echo("Lost the token? Run: python -m context_hub.cli config token-generate")
     else:
         typer.echo(f"Open in browser: {base}")
